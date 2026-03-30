@@ -83,6 +83,14 @@ export function accessService(db: Db) {
       .orderBy(sql`${companyMemberships.createdAt} desc`);
   }
 
+  async function getMemberById(companyId: string, memberId: string) {
+    return db
+      .select()
+      .from(companyMemberships)
+      .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, memberId)))
+      .then((rows) => rows[0] ?? null);
+  }
+
   async function listActiveUserMemberships(companyId: string) {
     return db
       .select()
@@ -103,11 +111,7 @@ export function accessService(db: Db) {
     grants: GrantInput[],
     grantedByUserId: string | null,
   ) {
-    const member = await db
-      .select()
-      .from(companyMemberships)
-      .where(and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.id, memberId)))
-      .then((rows) => rows[0] ?? null);
+    const member = await getMemberById(companyId, memberId);
     if (!member) return null;
 
     await db.transaction(async (tx) => {
@@ -190,7 +194,7 @@ export function accessService(db: Db) {
           principalType: "user",
           principalId: userId,
           status: "active",
-          membershipRole: "member",
+          membershipRole: "operator",
         });
       }
     });
@@ -359,11 +363,37 @@ export function accessService(db: Db) {
     });
   }
 
+  async function updateMember(
+    companyId: string,
+    memberId: string,
+    data: {
+      membershipRole?: string | null;
+      status?: "pending" | "active" | "suspended";
+    },
+  ) {
+    const existing = await getMemberById(companyId, memberId);
+    if (!existing) return null;
+    const nextMembershipRole =
+      data.membershipRole !== undefined ? data.membershipRole : existing.membershipRole;
+    const nextStatus = data.status ?? existing.status;
+    return db
+      .update(companyMemberships)
+      .set({
+        membershipRole: nextMembershipRole,
+        status: nextStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(companyMemberships.id, existing.id))
+      .returning()
+      .then((rows) => rows[0] ?? existing);
+  }
+
   return {
     isInstanceAdmin,
     canUser,
     hasPermission,
     getMembership,
+    getMemberById,
     ensureMembership,
     listMembers,
     listActiveUserMemberships,
@@ -376,5 +406,6 @@ export function accessService(db: Db) {
     setPrincipalGrants,
     listPrincipalGrants,
     setPrincipalPermission,
+    updateMember,
   };
 }

@@ -1,11 +1,14 @@
 import type { AgentAdapterType, JoinRequest } from "@paperclipai/shared";
 import { api } from "./client";
 
+export type HumanCompanyRole = "owner" | "admin" | "operator" | "viewer";
+
 type InviteSummary = {
   id: string;
   companyId: string | null;
   inviteType: "company_join" | "bootstrap_ceo";
   allowedJoinTypes: "human" | "agent" | "both";
+  humanRole?: HumanCompanyRole | null;
   expiresAt: string;
   onboardingPath?: string;
   onboardingUrl?: string;
@@ -87,9 +90,31 @@ type CompanyInviteCreated = {
   inviteUrl: string;
   expiresAt: string;
   allowedJoinTypes: "human" | "agent" | "both";
+  humanRole?: HumanCompanyRole | null;
   onboardingTextPath?: string;
   onboardingTextUrl?: string;
   inviteMessage?: string | null;
+};
+
+export type CompanyMember = {
+  id: string;
+  companyId: string;
+  principalType: "user";
+  principalId: string;
+  status: "pending" | "active" | "suspended";
+  membershipRole: HumanCompanyRole;
+  createdAt: string;
+  updatedAt: string;
+  user: { id: string; email: string | null; name: string | null } | null;
+};
+
+export type CompanyMembersResponse = {
+  members: CompanyMember[];
+  access: {
+    currentUserRole: HumanCompanyRole | null;
+    canManageMembers: boolean;
+    canInviteUsers: boolean;
+  };
 };
 
 export const accessApi = {
@@ -97,6 +122,7 @@ export const accessApi = {
     companyId: string,
     input: {
       allowedJoinTypes?: "human" | "agent" | "both";
+      humanRole?: HumanCompanyRole | null;
       defaultsPayload?: Record<string, unknown> | null;
       agentMessage?: string | null;
     } = {},
@@ -126,6 +152,18 @@ export const accessApi = {
 
   listJoinRequests: (companyId: string, status: "pending_approval" | "approved" | "rejected" = "pending_approval") =>
     api.get<JoinRequest[]>(`/companies/${companyId}/join-requests?status=${status}`),
+
+  listMembers: (companyId: string) =>
+    api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
+
+  updateMember: (
+    companyId: string,
+    memberId: string,
+    input: {
+      membershipRole?: HumanCompanyRole | null;
+      status?: "pending" | "active" | "suspended";
+    },
+  ) => api.patch<CompanyMember>(`/companies/${companyId}/members/${memberId}`, input),
 
   approveJoinRequest: (companyId: string, requestId: string) =>
     api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/approve`, {}),

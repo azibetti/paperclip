@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { agentJoinGrantsFromDefaults } from "../routes/access.js";
+import { agentJoinGrantsFromDefaults } from "../services/invite-grants.js";
+import {
+  grantsForHumanRole,
+  normalizeHumanRole,
+  resolveHumanInviteRole,
+} from "../services/company-member-roles.js";
 
 describe("agentJoinGrantsFromDefaults", () => {
   it("adds tasks:assign when invite defaults do not specify agent grants", () => {
@@ -53,5 +58,32 @@ describe("agentJoinGrantsFromDefaults", () => {
         scope: { projectId: "project-1" },
       },
     ]);
+  });
+});
+
+describe("human invite roles", () => {
+  it("maps owner to the full management grant set", () => {
+    expect(grantsForHumanRole("owner")).toEqual([
+      { permissionKey: "agents:create", scope: null },
+      { permissionKey: "users:invite", scope: null },
+      { permissionKey: "users:manage_permissions", scope: null },
+      { permissionKey: "tasks:assign", scope: null },
+      { permissionKey: "joins:approve", scope: null },
+    ]);
+  });
+
+  it("defaults legacy or missing roles to operator", () => {
+    expect(normalizeHumanRole("member")).toBe("operator");
+    expect(resolveHumanInviteRole(null)).toBe("operator");
+  });
+
+  it("reads the configured human invite role from defaults", () => {
+    expect(
+      resolveHumanInviteRole({
+        human: {
+          role: "viewer",
+        },
+      }),
+    ).toBe("viewer");
   });
 });

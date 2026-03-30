@@ -49,7 +49,11 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
               .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
               .then((rows) => rows[0] ?? null),
             db
-              .select({ companyId: companyMemberships.companyId })
+              .select({
+                companyId: companyMemberships.companyId,
+                membershipRole: companyMemberships.membershipRole,
+                status: companyMemberships.status,
+              })
               .from(companyMemberships)
               .where(
                 and(
@@ -63,6 +67,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
             type: "board",
             userId,
             companyIds: memberships.map((row) => row.companyId),
+            memberships,
             isInstanceAdmin: Boolean(roleRow),
             runId: runIdHeader ?? undefined,
             source: "session",
@@ -91,6 +96,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           type: "board",
           userId: boardKey.userId,
           companyIds: access.companyIds,
+          memberships: access.memberships,
           isInstanceAdmin: access.isInstanceAdmin,
           keyId: boardKey.id,
           runId: runIdHeader || undefined,
