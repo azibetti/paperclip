@@ -5,11 +5,19 @@ import { errorHandler } from "../middleware/index.js";
 import { issueRoutes } from "../routes/issues.js";
 
 const mockFeedbackService = vi.hoisted(() => ({
+  flushPendingFeedbackTraces: vi.fn(),
   getFeedbackTraceById: vi.fn(),
   getFeedbackTraceBundle: vi.fn(),
   listIssueVotesForUser: vi.fn(),
   listFeedbackTraces: vi.fn(),
   saveIssueVote: vi.fn(),
+}));
+
+const mockIssueService = vi.hoisted(() => ({
+  getById: vi.fn(),
+  update: vi.fn(),
+  addComment: vi.fn(),
+  findMentionedAgents: vi.fn(),
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -42,12 +50,7 @@ vi.mock("../services/index.js", () => ({
     listCompanyIds: vi.fn(async () => ["company-1"]),
   }),
   issueApprovalService: () => ({}),
-  issueService: () => ({
-    getById: vi.fn(),
-    update: vi.fn(),
-    addComment: vi.fn(),
-    findMentionedAgents: vi.fn(),
-  }),
+  issueService: () => mockIssueService,
   logActivity: vi.fn(async () => undefined),
   projectService: () => ({}),
   routineService: () => ({
@@ -63,7 +66,7 @@ function createApp(actor: Record<string, unknown>) {
     (req as any).actor = actor;
     next();
   });
-  app.use("/api", issueRoutes({} as any, {} as any));
+  app.use("/api", issueRoutes({} as any, {} as any, { feedbackExportService: mockFeedbackService }));
   app.use(errorHandler);
   return app;
 }
@@ -71,6 +74,62 @@ function createApp(actor: Record<string, unknown>) {
 describe("issue feedback trace routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("flushes a newly shared trace immediately after saving a vote", async () => {
+    mockIssueService.getById.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+      companyId: "company-1",
+      status: "todo",
+      identifier: "PAP-1",
+      title: "Feedback test",
+    });
+    mockFeedbackService.saveIssueVote.mockResolvedValue({
+      vote: {
+        id: "vote-1",
+        companyId: "company-1",
+        issueId: "11111111-1111-4111-8111-111111111111",
+        targetType: "issue_comment",
+        targetId: "22222222-2222-4222-8222-222222222222",
+        authorUserId: "user-1",
+        vote: "up",
+        reason: null,
+        sharedWithLabs: true,
+        sharedAt: new Date(),
+        consentVersion: "feedback-data-sharing-v1",
+        redactionSummary: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      traceId: "trace-1",
+      consentEnabledNow: false,
+      persistedSharingPreference: null,
+      sharingEnabled: true,
+    });
+
+    const app = createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: ["company-1"],
+    });
+
+    const res = await request(app)
+      .post("/api/issues/11111111-1111-4111-8111-111111111111/feedback-votes")
+      .send({
+        targetType: "issue_comment",
+        targetId: "22222222-2222-4222-8222-222222222222",
+        vote: "up",
+        allowSharing: true,
+      });
+
+    expect(res.status).toBe(201);
+    expect(mockFeedbackService.flushPendingFeedbackTraces).toHaveBeenCalledWith({
+      companyId: "company-1",
+      traceId: "trace-1",
+      limit: 1,
+    });
   });
 
   it("rejects non-board callers before fetching a feedback trace", async () => {

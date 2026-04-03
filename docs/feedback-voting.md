@@ -19,7 +19,7 @@ Each vote creates two local records:
 
 All data lives in your local Paperclip database. Nothing leaves your machine unless you explicitly choose to share.
 
-When a vote is marked for sharing, Paperclip also queues the trace bundle for background export through the Telemetry Backend. The app server never uploads raw feedback trace bundles directly to object storage.
+When a vote is marked for sharing, Paperclip immediately tries to upload the trace bundle through the Telemetry Backend. If that immediate push fails, the trace is left in a retriable failed state for later flush attempts. The app server never uploads raw feedback trace bundles directly to object storage.
 
 ## Viewing your votes
 
@@ -168,19 +168,20 @@ Your preference is saved per-company. You can change it any time via the feedbac
 | Status | Meaning |
 |--------|---------|
 | `local_only` | Vote stored locally, not marked for sharing |
-| `pending` | Marked for sharing, waiting to be sent |
+| `pending` | Marked for sharing, saved locally, and waiting for the immediate upload attempt |
 | `sent` | Successfully transmitted |
-| `failed` | Transmission attempted but failed (will retry) |
+| `failed` | Transmission attempted but failed (for example the backend is unreachable or not configured); later flushes retry once a backend is available |
 
 Your local database always retains the full vote and trace data regardless of sharing status.
 
 ## Remote sync
 
-Votes you choose to share are queued as `pending` traces and flushed by the server's background worker to the Telemetry Backend. The Telemetry Backend validates the request, then persists the bundle into its configured object storage.
+Votes you choose to share are sent to the Telemetry Backend immediately from the vote request. The server also keeps a background flush worker so failed traces can retry later. The Telemetry Backend validates the request, then persists the bundle into its configured object storage.
 
 - App server responsibility: build the bundle, POST it to Telemetry Backend, update trace status
 - Telemetry Backend responsibility: authenticate the request, validate payload shape, compress/store the bundle, return the final object key
 - Retry behavior: failed uploads move to `failed` with an error message in `failureReason`, and the worker retries them on later ticks
+- Configuration requirement: remote export only works when `PAPERCLIP_FEEDBACK_EXPORT_BACKEND_URL` or `PAPERCLIP_TELEMETRY_BACKEND_URL` is configured on the app server
 
 Exported objects use a deterministic key pattern so they are easy to inspect:
 
