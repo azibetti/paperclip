@@ -86,6 +86,24 @@ export interface InboxWorkItemGroup {
   items: InboxWorkItem[];
 }
 
+export interface InboxKeyboardGroupSection {
+  key: string;
+  displayItems: InboxWorkItem[];
+  childrenByIssueId: ReadonlyMap<string, Issue[]>;
+}
+
+export type InboxKeyboardNavEntry =
+  | {
+      type: "top";
+      itemKey: string;
+      item: InboxWorkItem;
+    }
+  | {
+      type: "child";
+      issueId: string;
+      issue: Issue;
+    };
+
 export interface InboxProjectWorkspaceLookup {
   name: string;
 }
@@ -852,6 +870,48 @@ export function buildInboxNesting(items: InboxWorkItem[]): {
   });
 
   return { displayItems, childrenByIssueId };
+}
+
+export function getInboxWorkItemKey(item: InboxWorkItem): string {
+  if (item.kind === "issue") return `issue:${item.issue.id}`;
+  if (item.kind === "approval") return `approval:${item.approval.id}`;
+  if (item.kind === "failed_run") return `run:${item.run.id}`;
+  return `join:${item.joinRequest.id}`;
+}
+
+export function buildInboxKeyboardNavEntries(
+  groupedSections: ReadonlyArray<InboxKeyboardGroupSection>,
+  collapsedGroupKeys: ReadonlySet<string>,
+  collapsedInboxParents: ReadonlySet<string>,
+): InboxKeyboardNavEntry[] {
+  const entries: InboxKeyboardNavEntry[] = [];
+
+  for (const group of groupedSections) {
+    if (collapsedGroupKeys.has(group.key)) continue;
+
+    for (const item of group.displayItems) {
+      entries.push({
+        type: "top",
+        itemKey: `${group.key}:${getInboxWorkItemKey(item)}`,
+        item,
+      });
+
+      if (item.kind !== "issue") continue;
+
+      const children = group.childrenByIssueId.get(item.issue.id);
+      if (!children?.length || collapsedInboxParents.has(item.issue.id)) continue;
+
+      for (const child of children) {
+        entries.push({
+          type: "child",
+          issueId: child.id,
+          issue: child,
+        });
+      }
+    }
+  }
+
+  return entries;
 }
 
 export function shouldShowInboxSection({

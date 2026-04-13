@@ -95,12 +95,14 @@ import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@paperclipai/sh
 import {
   ACTIONABLE_APPROVAL_STATUSES,
   DEFAULT_INBOX_ISSUE_COLUMNS,
+  buildInboxKeyboardNavEntries,
   buildInboxNesting,
   getAvailableInboxIssueColumns,
+  getInboxWorkItemKey,
   getApprovalsForTab,
   getArchivedInboxSearchIssues,
-  getInboxWorkItems,
   getInboxKeyboardSelectionIndex,
+  getInboxWorkItems,
   getInboxSearchSupplementIssues,
   getLatestFailedRunsByAgent,
   matchesInboxIssueSearch,
@@ -125,6 +127,7 @@ import {
   type InboxCategoryFilter,
   type InboxFilterPreferences,
   type InboxIssueColumn,
+  type InboxKeyboardNavEntry,
   saveLastInboxTab,
   shouldShowInboxSection,
   type InboxTab,
@@ -140,9 +143,7 @@ type SectionKey =
   | "alerts";
 
 /** A flat navigation entry for keyboard j/k traversal that includes expanded children. */
-type NavEntry =
-  | { type: "top"; index: number; item: InboxWorkItem }
-  | { type: "child"; parentIndex: number; issue: Issue };
+type NavEntry = InboxKeyboardNavEntry;
 
 type InboxGroupedSection = {
   key: string;
@@ -1136,27 +1137,24 @@ export function Inbox() {
     });
   }, []);
 
-  // Build flat navigation list including expanded children for keyboard traversal
+  // Build flat navigation list from visible rows so keyboard traversal respects collapsed groups.
   const flatNavItems = useMemo((): NavEntry[] => {
-    const entries: NavEntry[] = [];
-    let topIndex = 0;
-    for (const group of groupedSections) {
-      for (const item of group.displayItems) {
-        entries.push({ type: "top", index: topIndex, item });
-        if (item.kind === "issue") {
-          const children = group.childrenByIssueId.get(item.issue.id);
-          const isExpanded = children?.length && !collapsedInboxParents.has(item.issue.id);
-          if (isExpanded) {
-            for (const child of children) {
-              entries.push({ type: "child", parentIndex: topIndex, issue: child });
-            }
-          }
-        }
-        topIndex += 1;
-      }
-    }
-    return entries;
-  }, [groupedSections, collapsedInboxParents]);
+    return buildInboxKeyboardNavEntries(groupedSections, collapsedGroupKeys, collapsedInboxParents);
+  }, [collapsedGroupKeys, collapsedInboxParents, groupedSections]);
+  const topFlatIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    flatNavItems.forEach((entry, index) => {
+      if (entry.type === "top") map.set(entry.itemKey, index);
+    });
+    return map;
+  }, [flatNavItems]);
+  const childFlatIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    flatNavItems.forEach((entry, index) => {
+      if (entry.type === "child") map.set(entry.issueId, index);
+    });
+    return map;
+  }, [flatNavItems]);
 
   const agentName = (id: string | null) => {
     if (!id) return null;
@@ -1478,13 +1476,6 @@ export function Inbox() {
     return "hidden";
   };
 
-  const getWorkItemKey = useCallback((item: InboxWorkItem): string => {
-    if (item.kind === "issue") return `issue:${item.issue.id}`;
-    if (item.kind === "approval") return `approval:${item.approval.id}`;
-    if (item.kind === "failed_run") return `run:${item.run.id}`;
-    return `join:${item.joinRequest.id}`;
-  }, []);
-
   // Keep selection valid when the list shape changes, but do not auto-select on initial load.
   useEffect(() => {
     setSelectedIndex((prev) => resolveInboxSelectionIndex(prev, flatNavItems.length));
@@ -1624,7 +1615,7 @@ export function Inbox() {
                 act.archiveIssue(item.issue.id);
               }
             } else {
-              const key = getWorkItemKey(item);
+              const key = getInboxWorkItemKey(item);
               if (!st.archivingNonIssueIds.has(key)) act.archiveNonIssue(key);
             }
           }
@@ -1638,7 +1629,7 @@ export function Inbox() {
             act.markUnreadIssue(issue.id);
           } else if (item) {
             if (item.kind === "issue") act.markUnreadIssue(item.issue.id);
-            else act.markNonIssueUnread(getWorkItemKey(item));
+            else act.markNonIssueUnread(getInboxWorkItemKey(item));
           }
           break;
         }
@@ -1652,7 +1643,7 @@ export function Inbox() {
             if (item.kind === "issue") {
               if (item.issue.isUnreadForMe && !st.fadingOutIssues.has(item.issue.id)) act.markRead(item.issue.id);
             } else {
-              const key = getWorkItemKey(item);
+              const key = getInboxWorkItemKey(item);
               if (!st.readItems.has(key)) act.markNonIssueRead(key);
             }
           }
@@ -1691,7 +1682,7 @@ export function Inbox() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [getWorkItemKey, issueLinkState, keyboardShortcutsEnabled]);
+  }, [issueLinkState, keyboardShortcutsEnabled]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -2001,27 +1992,6 @@ export function Inbox() {
           <div>
             <div ref={listRef} className="overflow-hidden rounded-xl border border-border bg-card">
               {(() => {
-                // Pre-compute flat nav index for each top-level item and child issue.
-                let flatIdx = 0;
-                const topFlatIndex = new Map<string, number>();
-                const childFlatIndex = new Map<string, number>();
-                for (const group of groupedSections) {
-                  for (const topItem of group.displayItems) {
-                    const itemKey = `${group.key}:${getWorkItemKey(topItem)}`;
-                    topFlatIndex.set(itemKey, flatIdx);
-                    flatIdx++;
-                    if (topItem.kind === "issue") {
-                      const children = group.childrenByIssueId.get(topItem.issue.id);
-                      const isExpanded = children?.length && !collapsedInboxParents.has(topItem.issue.id);
-                      if (isExpanded) {
-                        for (const child of children) {
-                          childFlatIndex.set(child.id, flatIdx);
-                          flatIdx++;
-                        }
-                      }
-                    }
-                  }
-                }
                 const renderInboxIssue = ({
                   issue,
                   depth,
@@ -2171,7 +2141,7 @@ export function Inbox() {
 
                   for (let index = 0; index < group.displayItems.length; index += 1) {
                     const item = group.displayItems[index]!;
-                    const navIdx = topFlatIndex.get(`${group.key}:${getWorkItemKey(item)}`) ?? 0;
+                    const navIdx = topFlatIndex.get(`${group.key}:${getInboxWorkItemKey(item)}`) ?? 0;
                     const wrapItem = (key: string, isSelected: boolean, child: ReactNode) => (
                       <div
                         key={`sel-${key}`}
