@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
+import { assetRoutes } from "../routes/assets.js";
 import type { StorageService } from "../storage/types.js";
 
 const { createAssetMock, getAssetByIdMock, logActivityMock } = vi.hoisted(() => ({
@@ -10,15 +11,13 @@ const { createAssetMock, getAssetByIdMock, logActivityMock } = vi.hoisted(() => 
   logActivityMock: vi.fn(),
 }));
 
-function registerServiceMocks() {
-  vi.doMock("../services/index.js", () => ({
-    assetService: vi.fn(() => ({
-      create: createAssetMock,
-      getById: getAssetByIdMock,
-    })),
-    logActivity: logActivityMock,
-  }));
-}
+vi.mock("../services/index.js", () => ({
+  assetService: vi.fn(() => ({
+    create: createAssetMock,
+    getById: getAssetByIdMock,
+  })),
+  logActivity: logActivityMock,
+}));
 
 function createAsset() {
   const now = new Date("2026-01-01T00:00:00.000Z");
@@ -65,8 +64,7 @@ function createStorageService(contentType = "image/png"): StorageService {
   };
 }
 
-async function createApp(storage: ReturnType<typeof createStorageService>) {
-  const { assetRoutes } = await import("../routes/assets.js");
+function createApp(storage: ReturnType<typeof createStorageService>) {
   const app = express();
   app.use((req, _res, next) => {
     req.actor = {
@@ -82,11 +80,6 @@ async function createApp(storage: ReturnType<typeof createStorageService>) {
 
 describe("POST /api/companies/:companyId/assets/images", () => {
   beforeEach(() => {
-    vi.resetModules();
-    vi.resetAllMocks();
-    vi.doUnmock("../services/index.js");
-    vi.doUnmock("../routes/assets.js");
-    registerServiceMocks();
     createAssetMock.mockReset();
     getAssetByIdMock.mockReset();
     logActivityMock.mockReset();
@@ -94,7 +87,7 @@ describe("POST /api/companies/:companyId/assets/images", () => {
 
   it("accepts PNG image uploads and returns an asset path", async () => {
     const png = createStorageService("image/png");
-    const app = await createApp(png);
+    const app = createApp(png);
 
     createAssetMock.mockResolvedValue(createAsset());
 
@@ -117,7 +110,7 @@ describe("POST /api/companies/:companyId/assets/images", () => {
 
   it("allows supported non-image attachments outside the company logo flow", async () => {
     const text = createStorageService("text/plain");
-    const app = await createApp(text);
+    const app = createApp(text);
 
     createAssetMock.mockResolvedValue({
       ...createAsset(),
@@ -143,11 +136,6 @@ describe("POST /api/companies/:companyId/assets/images", () => {
 
 describe("POST /api/companies/:companyId/logo", () => {
   beforeEach(() => {
-    vi.resetModules();
-    vi.resetAllMocks();
-    vi.doUnmock("../services/index.js");
-    vi.doUnmock("../routes/assets.js");
-    registerServiceMocks();
     createAssetMock.mockReset();
     getAssetByIdMock.mockReset();
     logActivityMock.mockReset();
@@ -155,7 +143,7 @@ describe("POST /api/companies/:companyId/logo", () => {
 
   it("accepts PNG logo uploads and returns an asset path", async () => {
     const png = createStorageService("image/png");
-    const app = await createApp(png);
+    const app = createApp(png);
 
     createAssetMock.mockResolvedValue(createAsset());
 
@@ -177,7 +165,7 @@ describe("POST /api/companies/:companyId/logo", () => {
 
   it("sanitizes SVG logo uploads before storing them", async () => {
     const svg = createStorageService("image/svg+xml");
-    const app = await createApp(svg);
+    const app = createApp(svg);
 
     createAssetMock.mockResolvedValue({
       ...createAsset(),
@@ -210,7 +198,7 @@ describe("POST /api/companies/:companyId/logo", () => {
 
   it("allows logo uploads within the general attachment limit", async () => {
     const png = createStorageService("image/png");
-    const app = await createApp(png);
+    const app = createApp(png);
     createAssetMock.mockResolvedValue(createAsset());
 
     const file = Buffer.alloc(150 * 1024, "a");
