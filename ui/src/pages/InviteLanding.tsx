@@ -353,6 +353,7 @@ export function InviteLandingPage() {
     const onboardingTextUrl = readNestedString(payload.onboarding, ["textInstructions", "url"]);
     const joinedNow = !showsAgentForm && payload.status === "approved";
     const approvalUrl = `${window.location.origin}/company/settings/access`;
+    const approverLabel = invitedByUserName ?? "A company admin";
 
     return (
       <div className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
@@ -365,7 +366,7 @@ export function InviteLandingPage() {
               className="h-12 w-12 border border-zinc-800 rounded-none"
             />
             <h1 className="text-lg font-semibold">
-              {joinedNow ? "You joined the company" : "Request submitted"}
+              {joinedNow ? "You joined the company" : `Request to join ${companyDisplayName}`}
             </h1>
           </div>
           {joinedNow ? (
@@ -377,20 +378,20 @@ export function InviteLandingPage() {
           ) : (
             <div className="mt-4 space-y-3">
               <p className="text-sm text-zinc-400">
-                {invitedByUserName
-                  ? `${invitedByUserName} must approve your request to join.`
-                  : "Your request is pending approval."}
-                {" "}Ask them to visit the link below to approve it.
+                {approverLabel} must approve your request to join.
               </p>
               <div className="border border-zinc-800 p-3">
                 <p className="text-xs text-zinc-500 mb-1">Approval page</p>
                 <a
                   href={approvalUrl}
-                  className="text-sm text-zinc-200 font-mono break-all underline underline-offset-2 hover:text-zinc-100"
+                  className="text-sm text-zinc-200 underline underline-offset-2 hover:text-zinc-100"
                 >
-                  {approvalUrl}
+                  Company Settings → Access
                 </a>
               </div>
+              <p className="text-sm text-zinc-400">
+                Ask them to visit <a href={approvalUrl} className="text-zinc-200 underline underline-offset-2 hover:text-zinc-100">Company Settings → Access</a> to approve your request.
+              </p>
               <p className="text-xs text-zinc-500">
                 Refresh this page after you've been approved — you'll be redirected automatically.
               </p>

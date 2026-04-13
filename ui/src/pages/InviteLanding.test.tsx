@@ -348,6 +348,76 @@ describe("InviteLandingPage", () => {
     });
   });
 
+  it("shows the pending approval page with the company icon and linked access instructions", async () => {
+    acceptInviteMock.mockResolvedValue({
+      id: "join-1",
+      companyId: "company-1",
+      requestType: "human",
+      status: "pending_approval",
+    });
+    getSessionMock.mockResolvedValue({
+      session: { id: "session-1", userId: "user-1" },
+      user: {
+        id: "user-1",
+        name: "Jane Example",
+        email: "jane@example.com",
+        image: null,
+      },
+    });
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/invite/pcp_invite_test"]}>
+          <QueryClientProvider client={queryClient}>
+            <Routes>
+              <Route path="/invite/:token" element={<InviteLandingPage />} />
+            </Routes>
+          </QueryClientProvider>
+        </MemoryRouter>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const continueButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Accept invite",
+    );
+    expect(continueButton).not.toBeNull();
+
+    await act(async () => {
+      continueButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
+    expect(container.textContent).toContain("Request to join Acme Robotics");
+    expect(container.textContent).toContain("A company admin must approve your request to join.");
+    expect(container.textContent).toContain(
+      "Ask them to visit Company Settings → Access to approve your request.",
+    );
+    expect(container.querySelector('img[alt="Acme Robotics logo"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("http://localhost/company/settings/access");
+
+    const approvalLinks = Array.from(container.querySelectorAll("a")).filter(
+      (link) => link.textContent === "Company Settings → Access",
+    );
+    expect(approvalLinks).toHaveLength(2);
+    const expectedApprovalUrl = `${window.location.origin}/company/settings/access`;
+    for (const link of approvalLinks) {
+      expect(link.getAttribute("href")).toBe(expectedApprovalUrl);
+    }
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("redirects straight to the company after sign-in when the user already has access", async () => {
     listCompaniesMock.mockResolvedValue([{ id: "company-1", name: "Acme Robotics" }]);
 
