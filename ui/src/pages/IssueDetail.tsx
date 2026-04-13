@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
-import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
+import { Link, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { approvalsApi } from "../api/approvals";
@@ -401,7 +401,16 @@ function InboxMobileToolbar({
       <Button
         variant="ghost"
         size="icon-sm"
-        onClick={() => navigate(backHref)}
+        onClick={() => {
+          // Use browser back when we have real history so the inbox
+          // restores its scroll position. Fall back to a PUSH to
+          // backHref when there's no prior entry (e.g. deep-link).
+          if (window.history.length > 1) {
+            navigate(-1);
+          } else {
+            navigate(backHref);
+          }
+        }}
         aria-label="Back to inbox"
       >
         <ArrowLeft className="h-5 w-5" />
@@ -465,6 +474,7 @@ export function IssueDetail() {
   const { setBreadcrumbs, setMobileToolbar } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   const location = useLocation();
   const { pushToast } = useToast();
   const { isMobile } = useSidebar();
@@ -552,14 +562,6 @@ export function IssueDetail() {
     placeholderData: keepPreviousData,
   });
 
-  const { data: linkedRuns, isLoading: linkedRunsLoading } = useQuery({
-    queryKey: queryKeys.issues.runs(issueId!),
-    queryFn: () => activityApi.runsForIssue(issueId!),
-    enabled: !!issueId,
-    refetchInterval: 5000,
-    placeholderData: keepPreviousData,
-  });
-
   const { data: linkedApprovals } = useQuery({
     queryKey: queryKeys.issues.approvals(issueId!),
     queryFn: () => issuesApi.listApprovals(issueId!),
@@ -593,6 +595,13 @@ export function IssueDetail() {
   const activeRun = resolveIssueActiveRun(issue, rawActiveRun);
 
   const hasLiveRuns = (liveRuns ?? []).length > 0 || !!activeRun;
+  const { data: linkedRuns, isLoading: linkedRunsLoading } = useQuery({
+    queryKey: queryKeys.issues.runs(issueId!),
+    queryFn: () => activityApi.runsForIssue(issueId!),
+    enabled: !!issueId,
+    refetchInterval: hasLiveRuns ? 5000 : false,
+    placeholderData: keepPreviousData,
+  });
   const runningIssueRun = useMemo(
     () => (
       activeRun?.status === "running"
@@ -1501,6 +1510,15 @@ export function IssueDetail() {
   }, [setBreadcrumbs, sourceBreadcrumb, issue, issueId, hasLiveRuns]);
 
   const isFromInbox = resolvedIssueDetailState?.issueDetailSource === "inbox";
+
+  // Scroll to top on forward navigation (PUSH/REPLACE) so issue doesn't
+  // inherit the inbox/issues-list scroll position on mobile.
+  useEffect(() => {
+    if (navigationType === "POP") return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    const main = document.getElementById("main-content");
+    if (main) main.scrollTop = 0;
+  }, [issueId, navigationType]);
 
   // Redirect to identifier-based URL if navigated via UUID
   useEffect(() => {
