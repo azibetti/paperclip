@@ -216,7 +216,11 @@ describe("IssuesList", () => {
     );
 
     await waitForAssertion(() => {
-      expect(mockIssuesApi.list).toHaveBeenCalledWith("company-1", { q: "server", projectId: undefined });
+      expect(mockIssuesApi.list).toHaveBeenCalledWith("company-1", {
+        q: "server",
+        projectId: undefined,
+        limit: 200,
+      });
       expect(container.textContent).toContain("Server result");
       expect(container.textContent).not.toContain("Local issue");
     });
@@ -250,6 +254,7 @@ describe("IssuesList", () => {
         q: "server",
         projectId: undefined,
         parentId: "parent-1",
+        limit: 200,
       });
       expect(container.textContent).toContain("Server result");
       expect(container.textContent).not.toContain("Local issue");
@@ -333,7 +338,7 @@ describe("IssuesList", () => {
     expect(onSearchChange).not.toHaveBeenCalled();
 
     act(() => {
-      vi.advanceTimersByTime(149);
+      vi.advanceTimersByTime(249);
     });
 
     expect(onSearchChange).not.toHaveBeenCalled();
@@ -345,6 +350,38 @@ describe("IssuesList", () => {
 
     expect(onSearchChange).toHaveBeenCalledTimes(1);
     expect(onSearchChange).toHaveBeenCalledWith("ab");
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows a refinement hint when search results hit the live search cap", async () => {
+    const serverIssues = Array.from({ length: 200 }, (_, index) =>
+      createIssue({
+        id: `issue-${index + 1}`,
+        identifier: `PAP-${index + 1}`,
+        title: `Server result ${index + 1}`,
+      }),
+    );
+
+    mockIssuesApi.list.mockResolvedValue(serverIssues);
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        initialSearch="server"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Showing up to 200 matches. Refine the search to narrow further.");
+    });
 
     act(() => {
       root.unmount();

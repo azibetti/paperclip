@@ -54,7 +54,8 @@ import { KanbanBoard } from "./KanbanBoard";
 import { buildIssueTree, countDescendants } from "../lib/issue-tree";
 import { buildSubIssueDefaultsForViewer } from "../lib/subIssueDefaults";
 import type { Issue, Project } from "@paperclipai/shared";
-const ISSUE_SEARCH_DEBOUNCE_MS = 150;
+const ISSUE_SEARCH_DEBOUNCE_MS = 250;
+const ISSUE_SEARCH_RESULT_LIMIT = 200;
 
 /* ── View state ── */
 
@@ -333,12 +334,14 @@ export function IssuesList({
     queryKey: [
       ...queryKeys.issues.search(selectedCompanyId!, normalizedIssueSearch, projectId),
       searchFilters ?? {},
+      ISSUE_SEARCH_RESULT_LIMIT,
       enableRoutineVisibilityFilter ? "with-routine-executions" : "without-routine-executions",
     ],
     queryFn: () =>
       issuesApi.list(selectedCompanyId!, {
         q: normalizedIssueSearch,
         projectId,
+        limit: ISSUE_SEARCH_RESULT_LIMIT,
         ...searchFilters,
         ...(enableRoutineVisibilityFilter ? { includeRoutineExecutions: true } : {}),
       }),
@@ -732,6 +735,11 @@ export function IssuesList({
 
       {isLoading && <PageSkeleton variant="issues-list" />}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {normalizedIssueSearch.length > 0 && searchedIssues.length === ISSUE_SEARCH_RESULT_LIMIT && (
+        <p className="text-xs text-muted-foreground">
+          Showing up to {ISSUE_SEARCH_RESULT_LIMIT} matches. Refine the search to narrow further.
+        </p>
+      )}
 
       {!isLoading && filtered.length === 0 && viewState.viewMode === "list" && (
         <EmptyState
