@@ -69,6 +69,15 @@ import {
   agentConfigurationDoc as piAgentConfigurationDoc,
 } from "@paperclipai/adapter-pi-local";
 import {
+  execute as openaiApiExecute,
+  testEnvironment as openaiApiTestEnvironment,
+  sessionCodec as openaiApiSessionCodec,
+} from "@paperclipai/adapter-openai-api/server";
+import {
+  agentConfigurationDoc as openaiApiAgentConfigurationDoc,
+  models as openaiApiModels,
+} from "@paperclipai/adapter-openai-api";
+import {
   execute as hermesExecute,
   testEnvironment as hermesTestEnvironment,
   sessionCodec as hermesSessionCodec,
@@ -200,6 +209,18 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
+const openaiApiAdapter: ServerAdapterModule = {
+  type: "openai_api",
+  execute: openaiApiExecute,
+  testEnvironment: openaiApiTestEnvironment,
+  sessionCodec: openaiApiSessionCodec,
+  models: openaiApiModels,
+  supportsLocalAgentJwt: true,
+  supportsInstructionsBundle: false,
+  requiresMaterializedRuntimeSkills: false,
+  agentConfigurationDoc: openaiApiAgentConfigurationDoc,
+};
+
 const hermesLocalAdapter: ServerAdapterModule = {
   type: "hermes_local",
   execute: hermesExecute,
@@ -236,6 +257,7 @@ function registerBuiltInAdapters() {
     cursorLocalAdapter,
     geminiLocalAdapter,
     openclawGatewayAdapter,
+    openaiApiAdapter,
     hermesLocalAdapter,
     processAdapter,
     httpAdapter,
