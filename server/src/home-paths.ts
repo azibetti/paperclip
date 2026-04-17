@@ -90,6 +90,14 @@ export function resolveManagedProjectWorkspaceDir(input: {
   );
 }
 
+export function resolveKnowledgeClientDir(clientSlug: string): string {
+  const trimmed = clientSlug.trim();
+  if (!trimmed) throw new Error("clientSlug must not be empty");
+  // Prevent path traversal
+  const sanitized = trimmed.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/^-+|-+$/g, "") || "client";
+  return path.resolve(resolvePaperclipInstanceRoot(), "knowledge", "clients", sanitized);
+}
+
 export function resolveHomeAwarePath(value: string): string {
   return path.resolve(expandHomePrefix(value));
 }

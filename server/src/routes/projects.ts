@@ -1,4 +1,6 @@
 import { Router, type Request, type Response } from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { Db } from "@paperclipai/db";
 import {
   createProjectSchema,
@@ -29,6 +31,7 @@ import {
 } from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
 import { getTelemetryClient } from "../telemetry.js";
+import { resolveKnowledgeClientDir } from "../home-paths.js";
 
 export function projectRoutes(db: Db) {
   const router = Router();
@@ -89,6 +92,55 @@ export function projectRoutes(db: Db) {
     }
     assertCompanyAccess(req, project.companyId);
     res.json(project);
+  });
+
+  const KNOWLEDGE_FIELDS = ["brand", "audience", "products", "campaigns"] as const;
+  type KnowledgeField = (typeof KNOWLEDGE_FIELDS)[number];
+
+  async function readKnowledgeFile(dir: string, field: KnowledgeField): Promise<string> {
+    try {
+      return await fs.readFile(path.join(dir, `${field}.md`), "utf8");
+    } catch {
+      return "";
+    }
+  }
+
+  router.get("/projects/:id/knowledge", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const dir = resolveKnowledgeClientDir(project.urlKey ?? id);
+    const knowledge: Record<KnowledgeField, string> = {
+      brand: await readKnowledgeFile(dir, "brand"),
+      audience: await readKnowledgeFile(dir, "audience"),
+      products: await readKnowledgeFile(dir, "products"),
+      campaigns: await readKnowledgeFile(dir, "campaigns"),
+    };
+    res.json(knowledge);
+  });
+
+  router.put("/projects/:id/knowledge", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const body = req.body as Partial<Record<KnowledgeField, unknown>>;
+    const dir = resolveKnowledgeClientDir(project.urlKey ?? id);
+    await fs.mkdir(dir, { recursive: true });
+    for (const field of KNOWLEDGE_FIELDS) {
+      const value = body[field];
+      if (typeof value === "string") {
+        await fs.writeFile(path.join(dir, `${field}.md`), value, "utf8");
+      }
+    }
+    res.json({ ok: true });
   });
 
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {

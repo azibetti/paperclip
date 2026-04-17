@@ -34,7 +34,7 @@ import { Loader2 } from "lucide-react";
 
 /* ── Top-level tab types ── */
 
-type ProjectBaseTab = "overview" | "list" | "workspaces" | "configuration" | "budget";
+type ProjectBaseTab = "overview" | "list" | "workspaces" | "configuration" | "budget" | "knowledge";
 type ProjectPluginTab = `plugin:${string}`;
 type ProjectTab = ProjectBaseTab | ProjectPluginTab;
 
@@ -52,6 +52,7 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "budget") return "budget";
   if (tab === "issues") return "list";
   if (tab === "workspaces") return "workspaces";
+  if (tab === "knowledge") return "knowledge";
   return null;
 }
 
@@ -91,6 +92,86 @@ function OverviewContent({
             <span className="text-muted-foreground">Target Date</span>
             <p>{project.targetDate}</p>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Knowledge tab ── */
+
+const KNOWLEDGE_FIELDS = [
+  { key: "brand", label: "Brand Guide" },
+  { key: "audience", label: "Target Audience" },
+  { key: "products", label: "Products & Services" },
+  { key: "campaigns", label: "Active Campaigns" },
+] as const;
+
+type KnowledgeData = Record<typeof KNOWLEDGE_FIELDS[number]["key"], string>;
+
+function KnowledgeTab({ projectId, companyId }: { projectId: string; companyId: string }) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const { data, isLoading } = useQuery({
+    queryKey: ["projects", projectId, "knowledge", companyId],
+    queryFn: () => projectsApi.getKnowledge(projectId, companyId),
+    enabled: !!projectId && !!companyId,
+  });
+  const [draft, setDraft] = useState<KnowledgeData | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const current: KnowledgeData = draft ?? {
+    brand: (data as KnowledgeData | undefined)?.brand ?? "",
+    audience: (data as KnowledgeData | undefined)?.audience ?? "",
+    products: (data as KnowledgeData | undefined)?.products ?? "",
+    campaigns: (data as KnowledgeData | undefined)?.campaigns ?? "",
+  };
+
+  const handleSave = async () => {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      await projectsApi.updateKnowledge(projectId, draft, companyId);
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "knowledge", companyId] });
+      setDraft(null);
+      pushToast({ title: "Knowledge saved", tone: "success" });
+    } catch {
+      pushToast({ title: "Failed to save knowledge", tone: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading knowledge...</p>;
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      {KNOWLEDGE_FIELDS.map(({ key, label }) => (
+        <div key={key} className="space-y-1.5">
+          <label className="text-sm font-medium text-foreground">{label}</label>
+          <textarea
+            className="w-full min-h-[140px] rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+            value={current[key]}
+            placeholder={`Paste ${label.toLowerCase()} here...`}
+            onChange={(e) => setDraft({ ...current, [key]: e.target.value })}
+          />
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          disabled={saving || !draft}
+          className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+        {draft && (
+          <button
+            onClick={() => setDraft(null)}
+            className="inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            Discard
+          </button>
         )}
       </div>
     </div>
@@ -502,6 +583,10 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/budget`, { replace: true });
       return;
     }
+    if (activeTab === "knowledge") {
+      navigate(`/projects/${canonicalProjectRef}/knowledge`, { replace: true });
+      return;
+    }
     if (activeTab === "workspaces") {
       navigate(`/projects/${canonicalProjectRef}/workspaces`, { replace: true });
       return;
@@ -635,6 +720,9 @@ export function ProjectDetail() {
     if (cachedTab === "budget") {
       return <Navigate to={`/projects/${canonicalProjectRef}/budget`} replace />;
     }
+    if (cachedTab === "knowledge") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/knowledge`} replace />;
+    }
     if (cachedTab === "workspaces" && workspaceTabDecisionLoaded && showWorkspacesTab) {
       return <Navigate to={`/projects/${canonicalProjectRef}/workspaces`} replace />;
     }
@@ -666,6 +754,8 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/workspaces`);
     } else if (tab === "budget") {
       navigate(`/projects/${canonicalProjectRef}/budget`);
+    } else if (tab === "knowledge") {
+      navigate(`/projects/${canonicalProjectRef}/knowledge`);
     } else if (tab === "configuration") {
       navigate(`/projects/${canonicalProjectRef}/configuration`);
     } else {
@@ -735,6 +825,7 @@ export function ProjectDetail() {
             { value: "list", label: "Issues" },
             { value: "overview", label: "Overview" },
             ...(showWorkspacesTab ? [{ value: "workspaces", label: "Workspaces" }] : []),
+            { value: "knowledge", label: "Knowledge" },
             { value: "configuration", label: "Configuration" },
             { value: "budget", label: "Budget" },
             ...pluginTabItems.map((item) => ({
@@ -791,6 +882,10 @@ export function ProjectDetail() {
             archivePending={archiveProject.isPending}
           />
         </div>
+      )}
+
+      {activeTab === "knowledge" && project?.id && resolvedCompanyId && (
+        <KnowledgeTab projectId={project.id} companyId={resolvedCompanyId} />
       )}
 
       {activeTab === "budget" && resolvedCompanyId ? (

@@ -58,4 +58,8 @@ export const projectsApi = {
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
+  getKnowledge: (id: string, companyId?: string) =>
+    api.get<Record<string, string>>(projectPath(id, companyId, "/knowledge")),
+  updateKnowledge: (id: string, data: Record<string, string>, companyId?: string) =>
+    api.put<{ ok: boolean }>(projectPath(id, companyId, "/knowledge"), data),
 };
