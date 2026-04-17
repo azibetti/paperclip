@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
+import { mkdirSync, readFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import {
-  asBoolean,
   asNumber,
   asString,
   buildPaperclipEnv,
@@ -72,6 +73,7 @@ interface BashResult {
 
 const DEFAULT_PROMPT_TEMPLATE =
   "You are agent {{agent.name}} (id: {{agent.id}}, company: {{agent.companyId}}). " +
+  "Your working directory is {{cwd}}. " +
   "Continue your Paperclip work. Current run: {{runId}}.";
 
 const SYSTEM_PROMPT_BASE = `You are an AI coding agent running inside Paperclip, an agent orchestration platform.
@@ -240,12 +242,44 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const config = parseObject(ctx.config);
 
   const model = asString(config.model, DEFAULT_OPENAI_API_MODEL);
-  const rawCwd = asString(config.cwd, process.cwd());
+
+  // Resolve CWD — priority: explicit config > instructionsRootPath > agent workspace fallback
+  const configuredCwd = asString(config.cwd, "").trim();
+  const instructionsRootPath = asString(config.instructionsRootPath, "").trim();
+  let rawCwd: string;
+  if (configuredCwd) {
+    rawCwd = configuredCwd;
+  } else if (instructionsRootPath) {
+    rawCwd = instructionsRootPath;
+  } else {
+    // Mirror server's resolveDefaultAgentWorkspaceDir logic
+    const paperclipHome =
+      (process.env.PAPERCLIP_HOME?.trim()) ||
+      path.join(os.homedir(), ".paperclip");
+    const instanceId = (process.env.PAPERCLIP_INSTANCE_ID?.trim()) || "default";
+    rawCwd = path.join(paperclipHome, "instances", instanceId, "workspaces", agent.id);
+    try { mkdirSync(rawCwd, { recursive: true }); } catch { /* ignore */ }
+  }
   const promptTemplate = asString(config.promptTemplate, DEFAULT_PROMPT_TEMPLATE);
-  const customSystemPrompt = asString(config.systemPrompt, "");
-  const maxIterations = asNumber(config.maxIterations, 30);
+
+  // Load system prompt: prefer config.systemPrompt (inline text), then read
+  // config.instructionsFilePath if provided, then fall back to empty string.
+  const rawSystemPrompt = asString(config.systemPrompt, "");
+  const instructionsFilePath = asString(config.instructionsFilePath, "");
+  let customSystemPrompt = rawSystemPrompt;
+  if (!customSystemPrompt && instructionsFilePath) {
+    try {
+      customSystemPrompt = readFileSync(instructionsFilePath, "utf8");
+    } catch {
+      // file missing or unreadable — proceed without it
+    }
+  }
+
+  const rawMaxIterations = asNumber(config.maxIterations, 0);
+  const maxIterations = rawMaxIterations > 0 ? rawMaxIterations : 30;
   const maxHistoryMessages = asNumber(config.maxHistoryMessages, 100);
-  const timeoutSec = asNumber(config.timeoutSec, 600);
+  const rawTimeoutSec = asNumber(config.timeoutSec, 0);
+  const timeoutSec = rawTimeoutSec > 0 ? rawTimeoutSec : 600;
   const apiBaseUrl = asString(config.apiBaseUrl, "https://api.openai.com/v1").replace(/\/$/, "");
   const configEnvObj = parseObject(config.env) as Record<string, string>;
 
@@ -294,6 +328,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     agentId: agent.id,
     companyId: agent.companyId,
     runId,
+    cwd,
     agent,
     context: ctx.context,
     run: { id: runId },
@@ -307,8 +342,25 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? history.slice(history.length - maxHistoryMessages)
       : history;
 
+  // Build runtime env info section so the model knows the concrete values to use in curl
+  const paperclipApiUrl = toolEnv.PAPERCLIP_API_URL ?? "";
+  const paperclipAgentId = toolEnv.PAPERCLIP_AGENT_ID ?? agent.id;
+  const runtimeEnvSection =
+    paperclipApiUrl
+      ? [
+          `## Runtime Environment`,
+          `The following variables are available in your bash environment — use them directly in curl commands:`,
+          `- PAPERCLIP_API_URL=${paperclipApiUrl}`,
+          `- PAPERCLIP_API_KEY is set (use \$PAPERCLIP_API_KEY in curl)`,
+          `- PAPERCLIP_RUN_ID is set (required X-Paperclip-Run-Id header for POST/PATCH)`,
+          `- PAPERCLIP_AGENT_ID=${paperclipAgentId}`,
+          ``,
+          `Example: curl -sS -H "Authorization: Bearer $PAPERCLIP_API_KEY" "${paperclipApiUrl}/api/agents/me/inbox-lite"`,
+        ].join("\n")
+      : "";
+
   // Build system prompt
-  const systemContent = [SYSTEM_PROMPT_BASE, customSystemPrompt].filter(Boolean).join("\n\n");
+  const systemContent = [SYSTEM_PROMPT_BASE, runtimeEnvSection, customSystemPrompt].filter(Boolean).join("\n\n");
 
   // Build messages for this run
   const messages: ChatMessage[] = [
@@ -536,5 +588,4 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   };
 }
 
-// Allow usage of resp in return (declared in loop scope above)
-declare let resp: OpenAIChatResponse | undefined;
+
