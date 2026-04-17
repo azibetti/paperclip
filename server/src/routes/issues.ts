@@ -155,10 +155,15 @@ function shouldImplicitlyReopenCommentForAgent(input: {
   assigneeAgentId: string | null | undefined;
   actorType: "agent" | "user";
   actorId: string;
+  actorRunId?: string | null;
 }) {
   if (!isClosedIssueStatus(input.issueStatus)) return false;
   if (typeof input.assigneeAgentId !== "string" || input.assigneeAgentId.length === 0) return false;
   if (input.actorType === "agent" && input.actorId === input.assigneeAgentId) return false;
+  // If the actor is a user/board with a runId, this is an automated agent process posting
+  // under board-level auth (e.g. local_trusted mode without an agent JWT). Treat it like
+  // a self-comment so the agent's own done-issue comment does not re-open the issue.
+  if (input.actorType !== "agent" && input.actorRunId) return false;
   return true;
 }
 
@@ -1410,6 +1415,7 @@ export function issueRoutes(
           assigneeAgentId: requestedAssigneeAgentId,
           actorType: actor.actorType,
           actorId: actor.actorId,
+          actorRunId: actor.runId,
         }));
     let interruptedRunId: string | null = null;
     const closedExecutionWorkspace = await getClosedIssueExecutionWorkspace(existing);
@@ -2338,6 +2344,7 @@ export function issueRoutes(
         assigneeAgentId: issue.assigneeAgentId,
         actorType: actor.actorType,
         actorId: actor.actorId,
+        actorRunId: actor.runId,
       });
     let reopened = false;
     let reopenFromStatus: string | null = null;
