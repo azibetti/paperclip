@@ -329,7 +329,7 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
         body: JSON.stringify({
           title: "Validate company import/export",
           description: largeIssueDescription,
-          status: "todo",
+          status: "backlog",
           projectId: sourceProject.id,
           assigneeAgentId: sourceAgent.id,
         }),
