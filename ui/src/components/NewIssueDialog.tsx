@@ -375,6 +375,7 @@ export function NewIssueDialog() {
   const selectedAssigneeUserId = selectedAssignee.assigneeUserId;
 
   const assigneeAdapterType = (agents ?? []).find((agent) => agent.id === selectedAssigneeAgentId)?.adapterType ?? null;
+  const assigneeAgentConfigModel = ((agents ?? []).find((agent) => agent.id === selectedAssigneeAgentId)?.adapterConfig?.model as string | undefined) ?? null;
   const supportsAssigneeOverrides = Boolean(
     assigneeAdapterType && ISSUE_OVERRIDE_ADAPTER_TYPES.has(assigneeAdapterType),
   );
@@ -934,6 +935,11 @@ export function NewIssueDialog() {
     },
     [assigneeAdapterModels],
   );
+  const modelNoneLabel = useMemo(() => {
+    if (!assigneeAgentConfigModel) return "Default model";
+    const found = (assigneeAdapterModels ?? []).find((m) => m.id === assigneeAgentConfigModel);
+    return found ? found.label : assigneeAgentConfigModel;
+  }, [assigneeAgentConfigModel, assigneeAdapterModels]);
 
   return (
     <Dialog
@@ -1412,9 +1418,9 @@ export function NewIssueDialog() {
                   <InlineEntitySelector
                     value={assigneeModelOverride}
                     options={modelOverrideOptions}
-                    placeholder="Default model"
+                    placeholder={modelNoneLabel}
                     disablePortal
-                    noneLabel="Default model"
+                    noneLabel={modelNoneLabel}
                     searchPlaceholder="Search models..."
                     emptyMessage="No models found."
                     onChange={setAssigneeModelOverride}
